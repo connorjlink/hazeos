@@ -10,6 +10,8 @@
 #include "vga.h"
 #include "defs.h"
 
+#define COPYRIGHT_LOGO "HazeOS - (c) Connor J. Link. All Rights Reserved."
+
 static uint8_t compose_color(VGAPalette palette)
 {
 	return (palette.bg << 4) | palette.fg;
@@ -122,7 +124,7 @@ void render_menubar()
 	}
 
 	render_text_center("Configuration", 0, VGA_WIDTH, header_row);
-	render_text_center("HazeOS - (c) Connor J. Link. All Rights Reserved.", 0, VGA_WIDTH, copyright_row);
+	render_text_center(COPYRIGHT_LOGO, 0, VGA_WIDTH, copyright_row);
 
 	_active_color = invert_color(_active_color);
 }
@@ -228,6 +230,21 @@ void render_text(Rect parent, Point pos, uint8_t color, const char* text)
 	}
 }
 
+void render_text_justified(Rect parent, Point pos, uint8_t color, const char* text)
+{
+	uint8_t color_cached = _active_color;
+	_active_color = color;
+
+	const size_t left = parent.pos.x + pos.x + 1;
+	const size_t right = parent.pos.x + parent.size.x + pos.x;
+
+	const size_t top = parent.pos.y + pos.y + 1;
+
+	render_text_center(text, left, right, top);
+
+	_active_color = color_cached;
+}
+
 void scroll_rect(Rect parent, uint8_t color)
 {
 	const size_t left = parent.pos.x + 1;
@@ -250,6 +267,23 @@ void scroll_rect(Rect parent, uint8_t color)
 	}
 }
 
+void erase_rect(Rect rect, uint8_t color)
+{
+	const size_t left = rect.pos.x + 1;
+	const size_t right = rect.pos.x + rect.size.x;
+
+	const size_t top = rect.pos.y + 1;
+	const size_t bottom = rect.pos.y + rect.size.y - 1;
+
+	for (int i = left; i < right; i++)
+	{
+		for (int j = top; j < bottom; j++)
+		{
+			terminal_putentryat(' ', color, i, j);
+		}
+	}
+}
+
 void write_console(Rect parent, Point* cursor, uint8_t color, const char* text)
 {
 	const size_t bottom = parent.size.y - 2;
@@ -268,11 +302,66 @@ void write_console(Rect parent, Point* cursor, uint8_t color, const char* text)
 	render_text(parent, *cursor, color, text);
 }
 
+const char* _explorer_items[] =
+{
+	"Editor",
+	"Terminal",
+	"Settings",
+	"About",
+};
+
+bool _explorer_selected = true;
+size_t _explorer_index = 0;
+
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof(x[0]))
+
+void render_explorer()
+{
+	Point point = POINT(0, 0);
+
+	for (int i = 0; i < ARRAY_SIZE(_explorer_items); i++)
+	{
+		uint8_t color = _active_color;
+
+		if (_explorer_selected && _explorer_index == i)
+		{
+			color = invert_color(color);
+		}
+
+		render_text(_explorer_rect, point, color, _explorer_items[i]);
+		point.y++;
+	}
+}
+
+void render_editor() 
+{
+	erase_rect(_navigator_rect, _active_color);
+	render_text(_navigator_rect, POINT(0, 1), _active_color, "EDITOR");
+}
+
+void render_terminal()
+{
+	erase_rect(_navigator_rect, _active_color);
+	render_text_justified(_navigator_rect, POINT(0, 1), _active_color, "TERMINAL");
+}
+
+void render_settings()
+{
+	erase_rect(_navigator_rect, _active_color);
+	render_text_justified(_navigator_rect, POINT(0, 1), _active_color, "SETTINGS");
+}
+
+void render_about()
+{
+	erase_rect(_navigator_rect, _active_color);
+	render_text_justified(_navigator_rect, POINT(0, 1), _active_color, "ABOUT");
+	render_text_justified(_navigator_rect, POINT(0, 3), _active_color, COPYRIGHT_LOGO);
+}
+
 void kernel_main(void) 
 {
 	terminal_initialize();
 	render_menubar();
-	//terminal_writestring("Hello, kernel World!\n", 1, 10);
 
 	disable_cursor();
 
@@ -283,7 +372,7 @@ void kernel_main(void)
 	render_groupbox(_console_rect, _active_color, "Console", false);
 	render_groupbox(_navigator_rect, _active_color, "Navigator", false);
 
-	//render_text(console_rect, string_point, color, "Hello, World!");
+	render_explorer();	
 
 	while (1)
 	{
@@ -295,20 +384,82 @@ void kernel_main(void)
 				shutdown();
 			}
 
-			else if (c == 'a') 
+			if (!_explorer_selected)
 			{
-				write_console(_console_rect, &_console_cursor, _active_color, "Hello, Antoine!");
+				switch (_explorer_index)
+				{
+					case 0:
+					{
+						render_editor();
+					} break;
+
+					case 1:
+					{
+						render_terminal();
+					} break;
+
+					case 2:
+					{
+						render_settings();
+					} break;
+
+					case 3:
+					{
+						render_about();
+					} break;
+				}
+			}
+			
+
+
+			switch (c)
+			{
+				case 's':
+				{
+					if (_explorer_selected && _explorer_index < ARRAY_SIZE(_explorer_items) - 1)
+					{
+						_explorer_index++;
+						render_explorer();
+					} 
+				} break;
+
+				case 'w':
+				{
+					if (_explorer_selected && _explorer_index > 0)
+					{
+						_explorer_index--;
+						render_explorer();
+					} 
+				} break;
+
+				case 'd':
+				{
+					_explorer_selected = false;
+					render_explorer();
+				} break;
+
+				case 'a':
+				{
+					_explorer_selected = true;
+					render_explorer();
+				} break;
+
+				default:
+				{
+					terminal_putchar(c, &x, &y);
+				} break;
+					
 			}
 
-			else if (c == 'c')
-			{
-				write_console(_console_rect, &_console_cursor, _active_color, "Hello, Connor!");
-			}
-	
-			else 
-			{
-				terminal_putchar(c, &x, &y);
-			}
+			// else if (c == 'a') 
+			// {
+			// 	write_console(_console_rect, &_console_cursor, _active_color, "Hello, Antoine!");
+			// }
+
+			// else if (c == 'c')
+			// {
+			// 	write_console(_console_rect, &_console_cursor, _active_color, "Hello, Connor!");
+			// }
 		}
 	}
 }
